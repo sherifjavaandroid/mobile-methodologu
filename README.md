@@ -4325,3 +4325,555 @@ echo "[+] Lab setup complete!"
 > 4. كن صبورًا ومثابرًا
 > 5. تعلم من كل تقرير
  
+
+
+
+# 🔍 Mobile Application Security Testing Methodology
+
+A comprehensive guide to discovering mobile application vulnerabilities following a systematic approach.
+
+![Mobile Security Testing](https://img.shields.io/badge/Mobile%20Security-Testing%20Guide-blue)
+![Android](https://img.shields.io/badge/Android-3DDC84?logo=android&logoColor=white)
+![iOS](https://img.shields.io/badge/iOS-000000?logo=ios&logoColor=white)
+![OWASP](https://img.shields.io/badge/OWASP-Mobile%20Security-orange)
+
+## 📋 Table of Contents
+
+1. [Phase 1: Initial Setup & Reconnaissance](#phase-1-initial-setup--reconnaissance)
+2. [Phase 2: Static Analysis](#phase-2-static-analysis)
+3. [Phase 3: Dynamic Analysis](#phase-3-dynamic-analysis)
+4. [Phase 4: Network Traffic Analysis](#phase-4-network-traffic-analysis)
+5. [Phase 5: Runtime Manipulation](#phase-5-runtime-manipulation)
+6. [Phase 6: Business Logic Testing](#phase-6-business-logic-testing)
+7. [Phase 7: Advanced Attacks](#phase-7-advanced-attacks)
+8. [Phase 8: Reporting & Documentation](#phase-8-reporting--documentation)
+
+---
+
+## Phase 1: Initial Setup & Reconnaissance
+
+### 🛠️ Environment Setup
+
+```bash
+# Install Required Tools
+sudo apt update
+sudo apt install -y python3 python3-pip git openjdk-11-jdk android-tools-adb android-tools-fastboot
+
+# Android Testing Tools
+pip3 install frida-tools objection androguard mobsf
+
+# iOS Testing Tools (on macOS)
+brew install libimobiledevice ideviceinstaller
+pip3 install frida-tools objection
+```
+
+### 📱 Application Information Gathering
+
+1. **Download the Application**
+   ```bash
+   # Android
+   adb shell pm list packages | grep target
+   adb shell pm path com.target.app
+   adb pull /path/to/app.apk
+   
+   # iOS (Jailbroken)
+   ssh root@device_ip "find /var/containers/Bundle/Application -name '*.app'"
+   scp -r root@device_ip:/path/to/app.app ./
+   ```
+
+2. **Extract Basic Information**
+   ```bash
+   # Android APK Information
+   aapt dump badging target.apk
+   
+   # iOS IPA Information
+   unzip target.ipa
+   codesign -dvvv Payload/Application.app
+   ```
+
+3. **Identify Target Components**
+   ```bash
+   # List Activities, Services, Receivers, Providers
+   aapt dump xmltree target.apk AndroidManifest.xml
+   ```
+
+---
+
+## Phase 2: Static Analysis
+
+### 🔍 Android Application Analysis
+
+1. **Decompile the Application**
+   ```bash
+   # Using APKTool
+   apktool d target.apk -o decompiled_app
+   
+   # Using JADX
+   jadx -d jadx_output target.apk
+   
+   # Using dex2jar
+   d2j-dex2jar.sh target.apk -o target.jar
+   ```
+
+2. **Security Configuration Analysis**
+   ```bash
+   # Check AndroidManifest.xml for security issues
+   grep -r "android:exported=\"true\"" decompiled_app/
+   grep -r "android:permission=\"\"" decompiled_app/
+   grep -r "android:debuggable=\"true\"" decompiled_app/
+   grep -r "android:allowBackup=\"true\"" decompiled_app/
+   ```
+
+3. **Search for Sensitive Information**
+   ```bash
+   # Search for hardcoded secrets
+   grep -rE "(api_key|apikey|secret|password|token)" jadx_output/
+   grep -rE "https?://[a-zA-Z0-9\-\.]+" jadx_output/
+   grep -rE "[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}" jadx_output/
+   
+   # Search for encryption keys
+   grep -rE "(AES|DES|RSA|KEY|encrypt|decrypt)" jadx_output/
+   ```
+
+### 🍎 iOS Application Analysis
+
+1. **Extract and Analyze IPA**
+   ```bash
+   # Extract IPA
+   unzip target.ipa
+   
+   # Class dump
+   class-dump -H Payload/Application.app/Application -o headers/
+   
+   # Check for security configurations
+   grep -r "NSAppTransportSecurity" Payload/Application.app/
+   grep -r "NSAllowsArbitraryLoads" Payload/Application.app/
+   ```
+
+2. **Analyze Binary Protections**
+   ```bash
+   # Check binary protections
+   otool -hv Payload/Application.app/Application
+   otool -l Payload/Application.app/Application | grep -A 4 LC_ENCRYPTION_INFO
+   ```
+
+---
+
+## Phase 3: Dynamic Analysis
+
+### 📱 Android Dynamic Testing
+
+1. **Setup Device/Emulator**
+   ```bash
+   # Install application
+   adb install target.apk
+   
+   # Start application with debugging
+   adb shell am start -D -n com.target.app/.MainActivity
+   ```
+
+2. **Testing Exported Components**
+   ```bash
+   # Test exported activities
+   adb shell am start -n com.target.app/.ExportedActivity
+   
+   # Test exported services
+   adb shell am startservice -n com.target.app/.ExportedService
+   
+   # Test broadcast receivers
+   adb shell am broadcast -a com.target.app.CUSTOM_ACTION
+   
+   # Test content providers
+   adb shell content query --uri content://com.target.app.provider/data
+   ```
+
+3. **Data Storage Analysis**
+   ```bash
+   # Access application data (requires root)
+   adb shell
+   su
+   cd /data/data/com.target.app/
+   
+   # Check SharedPreferences
+   cat shared_prefs/*.xml
+   
+   # Check databases
+   sqlite3 databases/app.db
+   .tables
+   .dump
+   
+   # Check files
+   ls -la files/
+   cat files/*
+   ```
+
+### 🍎 iOS Dynamic Testing
+
+1. **Setup Device**
+   ```bash
+   # Install application
+   ideviceinstaller -i target.ipa
+   
+   # Access application container
+   ssh root@device_ip
+   cd /var/mobile/Containers/Data/Application/[APP_ID]/
+   ```
+
+2. **Runtime Analysis**
+   ```bash
+   # Use Cycript for runtime manipulation
+   cycript -p ProcessName
+   
+   # Use Frida for dynamic instrumentation
+   frida -U -n ApplicationName
+   ```
+
+---
+
+## Phase 4: Network Traffic Analysis
+
+### 🌐 SSL/TLS Interception
+
+1. **Configure Proxy**
+   ```bash
+   # Android - Set proxy
+   adb shell settings put global http_proxy 192.168.1.100:8080
+   
+   # iOS - Install proxy certificate
+   # Configure WiFi proxy settings manually
+   ```
+
+2. **SSL Pinning Bypass**
+   ```javascript
+   // Frida script for Android
+   Java.perform(function() {
+       var SSLContext = Java.use('javax.net.ssl.SSLContext');
+       var TrustManager = Java.use('javax.net.ssl.X509TrustManager');
+       var SecureRandom = Java.use('java.security.SecureRandom');
+       
+       var TrustManagerImpl = Java.registerClass({
+           name: 'com.custom.TrustManagerImpl',
+           implements: [TrustManager],
+           methods: {
+               checkClientTrusted: function() {},
+               checkServerTrusted: function() {},
+               getAcceptedIssuers: function() { return []; }
+           }
+       });
+       
+       SSLContext.init.overload('[Ljavax.net.ssl.KeyManager;', '[Ljavax.net.ssl.TrustManager;', 'java.security.SecureRandom').implementation = function(km, tm, sr) {
+           this.init(km, [TrustManagerImpl.$new()], sr);
+       };
+   });
+   ```
+
+3. **API Testing**
+   ```bash
+   # Capture and analyze API requests
+   # Use Burp Suite or OWASP ZAP
+   
+   # Test for API vulnerabilities
+   - Authentication bypass
+   - IDOR vulnerabilities
+   - Rate limiting
+   - Input validation
+   ```
+
+---
+
+## Phase 5: Runtime Manipulation
+
+### 🔧 Using Frida
+
+1. **Basic Frida Scripts**
+   ```javascript
+   // Hook and modify function return values
+   Java.perform(function() {
+       var MainActivity = Java.use('com.target.app.MainActivity');
+       
+       MainActivity.isRooted.implementation = function() {
+           console.log('isRooted() called');
+           return false;
+       };
+       
+       MainActivity.isPinCorrect.implementation = function(pin) {
+           console.log('PIN entered: ' + pin);
+           return true;
+       };
+   });
+   ```
+
+2. **Advanced Hooking**
+   ```javascript
+   // Hook native functions
+   Interceptor.attach(Module.findExportByName("libapp.so", "Java_com_target_app_NativeLib_decrypt"), {
+       onEnter: function(args) {
+           console.log("Decrypt called with: " + Memory.readUtf8String(args[1]));
+       },
+       onLeave: function(retval) {
+           console.log("Decrypt returned: " + Memory.readUtf8String(retval));
+       }
+   });
+   ```
+
+### 🔍 Using Objection
+
+```bash
+# Start objection
+objection -g com.target.app explore
+
+# Common commands
+android hooking list activities
+android hooking list services
+android hooking watch class com.target.app.MainActivity
+
+# Bypass security checks
+android root disable
+android sslpinning disable
+```
+
+---
+
+## Phase 6: Business Logic Testing
+
+### 💰 Testing Business Flows
+
+1. **Transaction Testing**
+   ```bash
+   # Test for race conditions
+   # Run multiple concurrent requests
+   for i in {1..10}; do
+       curl -X POST https://api.target.com/purchase \
+       -H "Authorization: Bearer $TOKEN" \
+       -d '{"item_id": "123", "quantity": 1}' &
+   done
+   ```
+
+2. **Authorization Testing**
+   ```bash
+   # Test for IDOR
+   # Try accessing other users' data
+   curl https://api.target.com/user/123/profile
+   curl https://api.target.com/user/124/profile
+   curl https://api.target.com/user/125/profile
+   ```
+
+3. **Input Validation Testing**
+   ```python
+   # Test various payloads
+   payloads = [
+       "' OR '1'='1",  # SQL Injection
+       "<script>alert(1)</script>",  # XSS
+       "../../../../etc/passwd",  # Path Traversal
+       "; ls -la",  # Command Injection
+       "{{7*7}}",  # Template Injection
+   ]
+   
+   for payload in payloads:
+       response = requests.post("https://api.target.com/search", 
+                               data={"query": payload})
+       print(f"Payload: {payload}, Status: {response.status_code}")
+   ```
+
+---
+
+## Phase 7: Advanced Attacks
+
+### 🎯 Memory Analysis
+
+```bash
+# Android memory dump
+adb shell
+su
+cat /proc/$(pidof com.target.app)/maps
+dd if=/proc/$(pidof com.target.app)/mem of=/sdcard/memory.dump
+
+# Analyze memory dump
+strings memory.dump | grep -i password
+```
+
+### 🔐 Cryptographic Analysis
+
+```python
+# Test for weak encryption
+import hashlib
+
+def test_weak_crypto(data):
+    algorithms = {
+        'MD5': hashlib.md5,
+        'SHA1': hashlib.sha1,
+        'Weak DES': lambda x: "WEAK" if len(x) == 8 else "OK"
+    }
+    
+    for name, algo in algorithms.items():
+        try:
+            result = algo(data.encode()).hexdigest()
+            print(f"{name}: {result}")
+        except:
+            print(f"{name}: Check implementation")
+```
+
+### 🕸️ WebView Testing
+
+```javascript
+// Test JavaScript interfaces
+Java.perform(function() {
+    var WebView = Java.use('android.webkit.WebView');
+    
+    WebView.addJavascriptInterface.implementation = function(obj, name) {
+        console.log('JavascriptInterface added: ' + name);
+        this.addJavascriptInterface(obj, name);
+        
+        // Test for vulnerabilities
+        this.loadUrl("javascript:alert(typeof window." + name + ")");
+    };
+});
+```
+
+---
+
+## Phase 8: Reporting & Documentation
+
+### 📝 Vulnerability Report Template
+
+```markdown
+# Vulnerability Report: [Application Name]
+
+## Executive Summary
+[Brief overview of findings]
+
+## Vulnerability Details
+
+### 1. [Vulnerability Name]
+- **Severity**: High/Medium/Low
+- **CVSS Score**: X.X
+- **CWE**: CWE-XXX
+- **Description**: [Detailed description]
+- **Impact**: [Business impact]
+- **Steps to Reproduce**:
+  1. [Step 1]
+  2. [Step 2]
+  3. [Step 3]
+- **Proof of Concept**:
+  ```code
+  [PoC code or commands]
+  ```
+- **Remediation**: [Recommended fixes]
+
+## Technical Details
+[Additional technical information]
+
+## Appendix
+[Screenshots, logs, additional evidence]
+```
+
+### 🔍 Automated Scanning Script
+
+```python
+#!/usr/bin/env python3
+import os
+import subprocess
+import json
+from datetime import datetime
+
+class MobileSecurityScanner:
+    def __init__(self, app_path, platform):
+        self.app_path = app_path
+        self.platform = platform
+        self.results = {
+            'timestamp': datetime.now().isoformat(),
+            'app': app_path,
+            'platform': platform,
+            'vulnerabilities': []
+        }
+    
+    def run_static_analysis(self):
+        """Run static analysis checks"""
+        if self.platform == 'android':
+            self.android_static_analysis()
+        else:
+            self.ios_static_analysis()
+    
+    def android_static_analysis(self):
+        """Android specific static analysis"""
+        # Decompile APK
+        subprocess.run(['apktool', 'd', self.app_path, '-o', 'decompiled'])
+        
+        # Check for vulnerabilities
+        checks = [
+            ('Exported Components', 'grep -r "android:exported=\\"true\\"" decompiled/'),
+            ('Debuggable App', 'grep -r "android:debuggable=\\"true\\"" decompiled/'),
+            ('Hardcoded Secrets', 'grep -rE "(password|api_key|secret)" decompiled/'),
+            ('Weak Crypto', 'grep -rE "(MD5|SHA1|DES)" decompiled/'),
+            ('SQL Injection', 'grep -r "rawQuery" decompiled/'),
+            ('WebView Issues', 'grep -r "setJavaScriptEnabled(true)" decompiled/')
+        ]
+        
+        for check_name, command in checks:
+            result = subprocess.run(command, shell=True, capture_output=True, text=True)
+            if result.stdout:
+                self.results['vulnerabilities'].append({
+                    'type': check_name,
+                    'details': result.stdout[:500],  # Limit output
+                    'severity': self.assess_severity(check_name)
+                })
+    
+    def assess_severity(self, vuln_type):
+        """Assess vulnerability severity"""
+        severity_map = {
+            'Exported Components': 'Medium',
+            'Debuggable App': 'High',
+            'Hardcoded Secrets': 'High',
+            'Weak Crypto': 'High',
+            'SQL Injection': 'Critical',
+            'WebView Issues': 'Medium'
+        }
+        return severity_map.get(vuln_type, 'Low')
+    
+    def generate_report(self):
+        """Generate final report"""
+        with open('security_report.json', 'w') as f:
+            json.dump(self.results, f, indent=2)
+        
+        # Generate markdown report
+        with open('security_report.md', 'w') as f:
+            f.write('# Mobile Application Security Report\n\n')
+            f.write(f'**Application**: {self.app_path}\n')
+            f.write(f'**Platform**: {self.platform}\n')
+            f.write(f'**Date**: {self.results["timestamp"]}\n\n')
+            
+            f.write('## Vulnerabilities Found\n\n')
+            for vuln in self.results['vulnerabilities']:
+                f.write(f'### {vuln["type"]}\n')
+                f.write(f'**Severity**: {vuln["severity"]}\n')
+                f.write(f'**Details**:\n```\n{vuln["details"]}\n```\n\n')
+
+if __name__ == '__main__':
+    import argparse
+    
+    parser = argparse.ArgumentParser(description='Mobile Security Scanner')
+    parser.add_argument('app_path', help='Path to mobile application')
+    parser.add_argument('--platform', choices=['android', 'ios'], required=True)
+    
+    args = parser.parse_args()
+    
+    scanner = MobileSecurityScanner(args.app_path, args.platform)
+    scanner.run_static_analysis()
+    scanner.generate_report()
+```
+
+## 🔄 Testing Workflow
+
+1. **Initial Assessment** → 2. **Static Analysis** → 3. **Dynamic Testing** → 4. **Network Analysis** → 5. **Advanced Testing** → 6. **Report Generation**
+
+## 📚 Additional Resources
+
+- [OWASP Mobile Security Testing Guide](https://github.com/OWASP/owasp-mstg)
+- [Mobile Security Framework](https://github.com/MobSF/Mobile-Security-Framework-MobSF)
+- [Frida Scripts Collection](https://github.com/dweinstein/awesome-frida)
+- [iOS Security Guide](https://www.apple.com/business/docs/iOS_Security_Guide.pdf)
+- [Android Security Documentation](https://source.android.com/security)
+
+---
+
+**Note**: Always ensure you have proper authorization before testing any application. This guide is for educational purposes only.
